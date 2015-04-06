@@ -5,6 +5,8 @@ using System.Text;
 using System.Threading.Tasks;
 using System.IO;
 using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 
 namespace MazeSolver
 {
@@ -70,6 +72,15 @@ namespace MazeSolver
         }
 
         /// <summary>
+        /// Pixel color.
+        /// </summary>
+        public Color Color
+        {
+            get;
+            private set;
+        }
+
+        /// <summary>
         /// Total path score.
         /// </summary>
         public int F
@@ -94,6 +105,24 @@ namespace MazeSolver
         {
             get;
             private set;
+        }
+
+        public Node(int x, int y, int imageWidth, Color pixelColor)
+        {
+            this.X = x;
+            this.Y = y;
+            this.ID = (imageWidth * y) + x;
+
+            this.Color = pixelColor;
+
+            if (pixelColor == Color.FromArgb(255, 0, 0) || pixelColor == Color.FromArgb(0, 0, 255) || pixelColor == Color.FromArgb(255, 255, 255))
+            {
+                Walkable = true;
+            }
+            else
+            {
+                Walkable = false;
+            }
         }
 
         /// <summary>
@@ -128,13 +157,15 @@ namespace MazeSolver
         }
     }
 
+    enum RGBColorMask { Blue = 0, Green = 1, Red = 2, Alpha = 3 };
+
     class Program
     {
         static void Main(string[] args)
         {
             if (ArgCheck(args))
             {
-                //Variable declarations.
+                #region Variable Declarations
                 Node[,] mazeGraph;
 
                 //I'm going to use SortedSets here, since they're implemented using self-balancing red-black trees.
@@ -142,16 +173,106 @@ namespace MazeSolver
                 //but sorted sets exist in C# and are easier for a third party to read and understand.
                 SortedSet<Node> openList = new SortedSet<Node>();
                 SortedSet<Node> closedList = new SortedSet<Node>();
+                #endregion
 
+                #region Read in source image and convert to traversable graph (matrix of Node objects)
                 //Read in the picture file.
                 Bitmap sourceImage = new Bitmap(args[0]);
+                int imageWidth = sourceImage.Width;
+                int imageHeight = sourceImage.Height;
+                mazeGraph = new Node[imageWidth, imageHeight];
 
-                //Convert the image to a matrix of node objects.
+                //Creating a BitmapData object for reading and future manipulation of the image.
+                Rectangle imageDimensions = new Rectangle(0, 0, imageWidth, imageHeight);
+                BitmapData sourceImageData = sourceImage.LockBits(imageDimensions, System.Drawing.Imaging.ImageLockMode.ReadWrite, sourceImage.PixelFormat);
+
+                //First pixel data in the bitmap.
+                //This is an unmanaged pointer and, with the way Marshal Copy works, it's probably just easier to copy the data into a 1-dimensional array first.
+                //This could be done more efficiently with unsafe code and pointer manipulation.
+                IntPtr linePointer = sourceImageData.Scan0;
+                int strideLength = Math.Abs(sourceImageData.Stride);
+                int numberOfBytes = strideLength * imageHeight;
+                byte[] bitmapRGBValues = new byte[numberOfBytes];
+
+                //Copy the data into our byte array.
+                Marshal.Copy(linePointer, bitmapRGBValues, 0, numberOfBytes);
+
+                //We need to know if there's alpha channel information. If so, the format is 4 bytes per pixel. Otherwise, 3.
+                bool alphaChannelPresent = false;
+
+                if(Image.IsAlphaPixelFormat(sourceImage.PixelFormat))
+                {
+                    alphaChannelPresent = true;
+                }
+                else
+                {
+                    alphaChannelPresent = false;
+                }
+
+                if (alphaChannelPresent)
+                {
+                    //Process as 4 bytes per pixel
+                }
+                else
+                {
+                    //Process as 3 bytes per pixel.
+                    int currentByteCounter = 0;
+                    int pixelX = 0;
+                    int pixelY = 0;
+
+                    //Default RGB values.
+                    int blue = 0;
+                    int green = 0;
+                    int red = 0;
+                    Color currentColor = new Color();
+
+                    foreach (byte currentByte in bitmapRGBValues)
+                    {
+                        int currentRowPosition = currentByteCounter - (pixelY * strideLength);
+
+                        //The stride can be greater than the actual pixel data in each row.
+                        //If the current row position is past where there should be pixel data, do nothing.
+                        if (currentRowPosition < (sourceImage.Width * 3))
+                        {
+                            switch (currentRowPosition % 3)
+                            {
+                                case (int)RGBColorMask.Blue:
+                                    blue = Convert.ToInt32(currentByte);
+                                    break;
+                                case (int)RGBColorMask.Green:
+                                    green = Convert.ToInt32(currentByte);
+                                    break;
+                                case (int)RGBColorMask.Red:
+                                    red = Convert.ToInt32(currentByte);
+                                    currentColor = Color.FromArgb(red, green, blue);
+                                    //Create the node
+                                    mazeGraph[pixelX, pixelY] = new Node(pixelX, pixelY, imageWidth, currentColor);
+                                    pixelX++;
+                                    break;
+                            }
+                        }
+                        else
+                        {
+                            if ((currentRowPosition+1) == strideLength && pixelX == sourceImage.Width)
+                            {
+                                pixelX = 0;
+                                pixelY++;
+                            }
+                        }
+
+                        currentByteCounter++;
+                    }
+                }
+                #endregion
+
+                int breakpoint = 1;
 
                 //Code the A* pathfinding algorithm.
 
                 //Either convert the matrix w/ path to an image, or draw on top of the old one.
             }
+
+            return;
         }
 
         /// <summary>
@@ -195,7 +316,7 @@ namespace MazeSolver
                         //but it's not really a big deal.
                         string extension = Path.GetExtension(inputPath);
 
-                        if (string.Compare(extension, "png", true) == 0 || string.Compare(extension, "bmp", true) == 0 || string.Compare(extension, "jpg", true) == 0)
+                        if (string.Compare(extension, ".png", true) == 0 || string.Compare(extension, ".bmp", true) == 0 || string.Compare(extension, ".jpg", true) == 0)
                         {
                             //Hurrah! We've got a valid source image!
                             validSource = true;
