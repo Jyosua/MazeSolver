@@ -157,7 +157,7 @@ namespace MazeSolver
         }
     }
 
-    enum RGBColorMask { Blue = 0, Green = 1, Red = 2, Alpha = 3 };
+    enum RGBColorMask { Blue = 0, Green = 1, Red = 2};
 
     class Program
     {
@@ -168,6 +168,10 @@ namespace MazeSolver
                 #region Variable Declarations
                 Node[,] mazeGraph;
 
+                //These are for calculating the optimal start and stop points.
+                List<Point> startPoints = new List<Point>();
+                List<Point> endPoints = new List<Point>();
+
                 //I'm going to use SortedSets here, since they're implemented using self-balancing red-black trees.
                 //Technically, the program could probably run slightly faster if I implemented my own priority queue,
                 //but sorted sets exist in C# and are easier for a third party to read and understand.
@@ -175,104 +179,132 @@ namespace MazeSolver
                 SortedSet<Node> closedList = new SortedSet<Node>();
                 #endregion
 
-                #region Read in source image and convert to traversable graph (matrix of Node objects)
-                //Read in the picture file.
-                Bitmap sourceImage = new Bitmap(args[0]);
-                int imageWidth = sourceImage.Width;
-                int imageHeight = sourceImage.Height;
-                mazeGraph = new Node[imageWidth, imageHeight];
+                //Build the graph from the source image.
+                mazeGraph = BuildNodeGraph(args, startPoints, endPoints);
+                
+                //Find starting and ending squares
 
-                //Creating a BitmapData object for reading and future manipulation of the image.
-                Rectangle imageDimensions = new Rectangle(0, 0, imageWidth, imageHeight);
-                BitmapData sourceImageData = sourceImage.LockBits(imageDimensions, System.Drawing.Imaging.ImageLockMode.ReadWrite, sourceImage.PixelFormat);
-
-                //First pixel data in the bitmap.
-                //This is an unmanaged pointer and, with the way Marshal Copy works, it's probably just easier to copy the data into a 1-dimensional array first.
-                //This could be done more efficiently with unsafe code and pointer manipulation.
-                IntPtr linePointer = sourceImageData.Scan0;
-                int strideLength = Math.Abs(sourceImageData.Stride);
-                int numberOfBytes = strideLength * imageHeight;
-                byte[] bitmapRGBValues = new byte[numberOfBytes];
-
-                //Copy the data into our byte array.
-                Marshal.Copy(linePointer, bitmapRGBValues, 0, numberOfBytes);
-
-                //We need to know if there's alpha channel information. If so, the format is 4 bytes per pixel. Otherwise, 3.
-                bool alphaChannelPresent = false;
-
-                if(Image.IsAlphaPixelFormat(sourceImage.PixelFormat))
-                {
-                    alphaChannelPresent = true;
-                }
-                else
-                {
-                    alphaChannelPresent = false;
-                }
-
-                if (alphaChannelPresent)
-                {
-                    //Process as 4 bytes per pixel
-                }
-                else
-                {
-                    //Process as 3 bytes per pixel.
-                    int currentByteCounter = 0;
-                    int pixelX = 0;
-                    int pixelY = 0;
-
-                    //Default RGB values.
-                    int blue = 0;
-                    int green = 0;
-                    int red = 0;
-                    Color currentColor = new Color();
-
-                    foreach (byte currentByte in bitmapRGBValues)
-                    {
-                        int currentRowPosition = currentByteCounter - (pixelY * strideLength);
-
-                        //The stride can be greater than the actual pixel data in each row.
-                        //If the current row position is past where there should be pixel data, do nothing.
-                        if (currentRowPosition < (sourceImage.Width * 3))
-                        {
-                            switch (currentRowPosition % 3)
-                            {
-                                case (int)RGBColorMask.Blue:
-                                    blue = Convert.ToInt32(currentByte);
-                                    break;
-                                case (int)RGBColorMask.Green:
-                                    green = Convert.ToInt32(currentByte);
-                                    break;
-                                case (int)RGBColorMask.Red:
-                                    red = Convert.ToInt32(currentByte);
-                                    currentColor = Color.FromArgb(red, green, blue);
-                                    //Create the node
-                                    mazeGraph[pixelX, pixelY] = new Node(pixelX, pixelY, imageWidth, currentColor);
-                                    pixelX++;
-                                    break;
-                            }
-                        }
-                        else
-                        {
-                            if ((currentRowPosition+1) == strideLength && pixelX == sourceImage.Width)
-                            {
-                                pixelX = 0;
-                                pixelY++;
-                            }
-                        }
-
-                        currentByteCounter++;
-                    }
-                }
-                #endregion
-
-                int breakpoint = 1;
 
                 //Code the A* pathfinding algorithm.
 
+
                 //Either convert the matrix w/ path to an image, or draw on top of the old one.
+                int breakpoint = 1;
             }
 
             return;
+        }
+
+        /// <summary>
+        /// Method for constructing the graph to be traversed by the program.
+        /// Also modifies the startPoints and endPoints lists by populating them with potential start/end points.
+        /// </summary>
+        /// <param name="args">The original program arguments.</param>
+        /// <returns>The generated Node array.</returns>
+        private static Node[,] BuildNodeGraph(string[] args, List<Point> startPoints, List<Point> endPoints)
+        {
+            Node[,] localMazeGraph;
+
+            //Read in the picture file and convert to a common format.
+            //A 24bpp should be sufficient and is easy to work with. We also don't care about alpha channel data.
+            Bitmap preconvertSourceImage = new Bitmap(args[0]);
+            Bitmap sourceImage = new Bitmap(preconvertSourceImage.Width, preconvertSourceImage.Height, PixelFormat.Format24bppRgb);
+            using (Graphics drawingSurface = Graphics.FromImage(sourceImage))
+            {
+                drawingSurface.DrawImage(preconvertSourceImage, new Rectangle(0, 0, sourceImage.Width, sourceImage.Height));
+            }
+
+            //Don't need the original bitmap anymore, so might as well free the memory.
+            preconvertSourceImage.Dispose();
+
+            int imageWidth = sourceImage.Width;
+            int imageHeight = sourceImage.Height;
+            localMazeGraph = new Node[imageWidth, imageHeight];
+
+            //Creating a BitmapData object for reading and future manipulation of the image.
+            Rectangle imageDimensions = new Rectangle(0, 0, imageWidth, imageHeight);
+            BitmapData sourceImageData = sourceImage.LockBits(imageDimensions, System.Drawing.Imaging.ImageLockMode.ReadWrite, sourceImage.PixelFormat);
+
+            //First pixel data in the bitmap.
+            //This is an unmanaged pointer and, with the way Marshal Copy works, it's probably just easier to copy the data into a 1-dimensional array first.
+            //This could be done more efficiently with unsafe code and pointer manipulation.
+            IntPtr linePointer = sourceImageData.Scan0;
+            int strideLength = Math.Abs(sourceImageData.Stride);
+            int numberOfBytes = strideLength * imageHeight;
+            byte[] bitmapRGBValues = new byte[numberOfBytes];
+
+            //Copy the data into our byte array.
+            Marshal.Copy(linePointer, bitmapRGBValues, 0, numberOfBytes);
+
+            //Process as 3 bytes per pixel.
+            int currentByteCounter = 0;
+            int pixelX = 0;
+            int pixelY = 0;
+
+            //Default RGB values.
+            int blue = 0;
+            int green = 0;
+            int red = 0;
+            Color currentColor = new Color();
+
+            foreach (byte currentByte in bitmapRGBValues)
+            {
+                int currentRowPosition = currentByteCounter - (pixelY * strideLength);
+
+                //The stride can be greater than the actual pixel data in each row.
+                //If the current row position is past where there should be pixel data, do nothing.
+                if (currentRowPosition < (sourceImage.Width * 3))
+                {
+                    switch (currentRowPosition % 3)
+                    {
+                        case (int)RGBColorMask.Blue:
+                            blue = Convert.ToInt32(currentByte);
+                            break;
+                        case (int)RGBColorMask.Green:
+                            green = Convert.ToInt32(currentByte);
+                            break;
+                        case (int)RGBColorMask.Red:
+                            red = Convert.ToInt32(currentByte);
+                            currentColor = Color.FromArgb(red, green, blue);
+                            //Create the node
+                            localMazeGraph[pixelX, pixelY] = new Node(pixelX, pixelY, imageWidth, currentColor);
+
+                            if (currentColor == Color.FromArgb(255, 0, 0))
+                            {
+                                //Add coordinates to potential start point list
+                                startPoints.Add(new Point(pixelX, pixelY));
+                            }else if(currentColor == Color.FromArgb(0,0,255))
+                            {
+                                //Add coordinates to potential start point list
+                                endPoints.Add(new Point(pixelX, pixelY));
+                            }
+
+                            pixelX++;
+                            break;
+                    }
+                }
+                else
+                {
+                    //When we get to the last byte of a row, we need to reset the X coordinate counter and increment the Y.
+                    if ((currentRowPosition + 1) == strideLength && pixelX == imageWidth)
+                    {
+                        pixelX = 0;
+                        pixelY++;
+                    }
+                    //Edge case where stride = image width * 3
+                    //In this case, when the current row position is equal to the stride length, we must process this as the first byte of the next pixel.
+                    else if (currentRowPosition == strideLength && pixelX == imageWidth)
+                    {
+                        pixelX = 0;
+                        pixelY++;
+                        blue = Convert.ToInt32(currentByte);
+                    }
+                }
+
+                currentByteCounter++;
+            }
+
+            return localMazeGraph;
         }
 
         /// <summary>
