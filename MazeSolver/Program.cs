@@ -168,9 +168,11 @@ namespace MazeSolver
                 #region Variable Declarations
                 Node[,] mazeGraph;
 
-                //These are for calculating the optimal start and stop points.
+                //These are for calculating the average start and stop points.
                 List<Point> startPoints = new List<Point>();
                 List<Point> endPoints = new List<Point>();
+                Point averageStartPoint = new Point();
+                Point averageEndPoint = new Point();
 
                 //I'm going to use SortedSets here, since they're implemented using self-balancing red-black trees.
                 //Technically, the program could probably run slightly faster if I implemented my own priority queue,
@@ -179,20 +181,123 @@ namespace MazeSolver
                 SortedSet<Node> closedList = new SortedSet<Node>();
                 #endregion
 
-                //Build the graph from the source image.
-                mazeGraph = BuildNodeGraph(args, startPoints, endPoints);
+                //Build the graph from the source image and calculate average start/end points. Lists and Points are modified.
+                mazeGraph = BuildNodeGraph(args, startPoints, endPoints, averageStartPoint, averageEndPoint);
                 
-                //Find starting and ending squares
-
+                //Find starting and ending pixels.
+                bool checkStartStop = false;
+                if(averageStartPoint != null && averageEndPoint != null)
+                {
+                    checkStartStop = CheckStartStopCriteria(startPoints, endPoints, averageStartPoint, averageEndPoint);
+                }
+                else
+                {
+                    Console.WriteLine("Start/Stop criteria missing! Cannot begin pathfinding!");
+                    return;
+                }
 
                 //Code the A* pathfinding algorithm.
-
+                if (checkStartStop)
+                {
+                    //WE'RE IN BUSINESS!
+                }
 
                 //Either convert the matrix w/ path to an image, or draw on top of the old one.
-                int breakpoint = 1;
             }
 
             return;
+        }
+
+        /// <summary>
+        /// Method for verifying the start and stop points calculated by the graph generation.
+        /// If they are incorrect, the method searches for a correct start/stop point.
+        /// </summary>
+        /// <param name="startPoints">List of valid start points.</param>
+        /// <param name="endPoints">List of valid end points.</param>
+        /// <param name="averageStartPoint">Postulated average start point.</param>
+        /// <param name="averageEndPoint">Postulated average end point.</param>
+        /// <returns></returns>
+        private static bool CheckStartStopCriteria(List<Point> startPoints, List<Point> endPoints, Point averageStartPoint, Point averageEndPoint)
+        {
+            //First, verify that the calculated average start point is actually valid.
+            //If it's not, we'll look at all adjacent pixels for one that is present in the list of valid start points.
+            //Normally it would be inadviseable to search large lists, as they are O(n) in the worst case.
+            //However, as it turns out, the larger the list, the greater the chance you only have to do this once.
+            //Despite this, consider replacing with a dictionary, instead.
+            bool startPointFound = false;
+
+            if(!startPoints.Contains(averageStartPoint))
+            {
+                for (int x = -1; x < 2; x++)
+                {
+                    for (int y = -1; y < 2; y++)
+                    {
+                        if(x!=0 && y!=0)
+                        {
+                            int testX = averageStartPoint.X + x;
+                            int testY = averageStartPoint.Y + y;
+                            Point testPoint = new Point(testX, testY);
+                            if (startPoints.Contains(testPoint))
+                            {
+                                averageStartPoint = testPoint;
+                                startPointFound = true;
+                                goto Start_Point_Search_Complete; //Dijkstra rolls over in his grave.
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                startPointFound = true;
+            }
+
+            //A very rare use of a goto to break out of the double loops. Recommended in the MSDN reference library -- go figure!
+            //If a start point still wasn't found, it may indicate larger problems...
+            Start_Point_Search_Complete:
+                if(!startPointFound)
+                {
+                    return false;
+                }
+
+            bool endPointFound = false;
+
+            if (!endPoints.Contains(averageEndPoint))
+            {
+                for (int x = -1; x < 2; x++)
+                {
+                    for (int y = -1; y < 2; y++)
+                    {
+                        if (x != 0 && y != 0)
+                        {
+                            int testX = averageEndPoint.X + x;
+                            int testY = averageEndPoint.Y + y;
+                            Point testPoint = new Point(testX, testY);
+                            if (startPoints.Contains(testPoint))
+                            {
+                                averageEndPoint = testPoint;
+                                endPointFound = true;
+                                goto End_Point_Search_Complete;
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                endPointFound = true;
+            }
+
+            //Same as before, but this time for the end point.
+            End_Point_Search_Complete:
+                if (startPointFound && endPointFound)
+                {
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
         }
 
         /// <summary>
@@ -201,9 +306,11 @@ namespace MazeSolver
         /// </summary>
         /// <param name="args">The original program arguments.</param>
         /// <returns>The generated Node array.</returns>
-        private static Node[,] BuildNodeGraph(string[] args, List<Point> startPoints, List<Point> endPoints)
+        private static Node[,] BuildNodeGraph(string[] args, List<Point> startPoints, List<Point> endPoints, Point averageStartPoint, Point averageEndPoint)
         {
             Node[,] localMazeGraph;
+            int startingPointXSum = 0, startingPointYSum = 0, numberOfStartingPoints = 0;
+            int endingPointXSum = 0, endingPointYSum = 0, numberOfEndingPoints = 0;
 
             //Read in the picture file and convert to a common format.
             //A 24bpp should be sufficient and is easy to work with. We also don't care about alpha channel data.
@@ -273,10 +380,16 @@ namespace MazeSolver
                             {
                                 //Add coordinates to potential start point list
                                 startPoints.Add(new Point(pixelX, pixelY));
+                                startingPointXSum += pixelX;
+                                startingPointYSum += pixelY;
+                                numberOfStartingPoints++;
                             }else if(currentColor == Color.FromArgb(0,0,255))
                             {
-                                //Add coordinates to potential start point list
+                                //Add coordinates to potential end point list
                                 endPoints.Add(new Point(pixelX, pixelY));
+                                endingPointXSum += pixelX;
+                                endingPointYSum += pixelY;
+                                numberOfEndingPoints++;
                             }
 
                             pixelX++;
@@ -302,6 +415,28 @@ namespace MazeSolver
                 }
 
                 currentByteCounter++;
+            }
+
+            if (numberOfStartingPoints!=0)
+            {
+                double averageStartX = (double)startingPointXSum/(double)numberOfStartingPoints;
+                double averageStartY = (double)startingPointYSum / (double)numberOfStartingPoints;
+                averageStartPoint = new Point(Convert.ToInt32(Math.Round(averageStartX)), Convert.ToInt32(Math.Round(averageStartY)));
+            }
+            else
+            {
+                Console.WriteLine("No start points found!");
+            }
+
+            if (numberOfEndingPoints != 0)
+            {
+                double averageEndX = (double)endingPointXSum / (double)numberOfEndingPoints;
+                double averageEndY = (double)endingPointYSum / (double)numberOfEndingPoints;
+                averageStartPoint = new Point(Convert.ToInt32(Math.Round(averageEndX)), Convert.ToInt32(Math.Round(averageEndY)));
+            }
+            else
+            {
+                Console.WriteLine("No end points found!");
             }
 
             return localMazeGraph;
