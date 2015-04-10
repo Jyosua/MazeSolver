@@ -220,6 +220,15 @@ namespace MazeSolver
                 return false;
             }
         }
+
+        internal void SetStartPoint()
+        {
+            this.G = 0;
+
+            //-1 will indicate it's the start point later on.
+            this.ParentX = -1;
+            this.ParentY = -1;
+        }
     }
 
     enum RGBColorMask { Blue = 0, Green = 1, Red = 2};
@@ -271,6 +280,7 @@ namespace MazeSolver
 
                     bool PathFound = false;
 
+                    mazeGraph[averageStartPoint.X, averageStartPoint.Y].SetStartPoint();
                     openList.Add(mazeGraph[averageStartPoint.X, averageStartPoint.Y]); //NEED TO ALSO SET INITIAL G VALUE****
 
                     PathFound = AStarPathfinding(mazeGraph, openList, closedList, averageStartPoint, averageEndPoint);
