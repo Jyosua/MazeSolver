@@ -155,6 +155,71 @@ namespace MazeSolver
                 }
             }
         }
+
+        internal void CalculateF(Node node, Point targetCoordinates)
+        {
+            //Set the parent node
+            this.ParentX = node.X;
+            this.ParentY = node.Y;
+
+            //I'm using 14 and 10 instead of 1.0 and 1.414...
+            //Hopefully the avoidance of double operations and square roots will speed the program up.
+
+            if(node.X!=this.X && node.Y!=this.Y)
+            {
+                this.G = node.G + 14;
+            }
+            else
+            {
+                this.G = node.G + 10;
+            }
+
+            int distanceX = Math.Abs(this.X - targetCoordinates.X);
+            int distanceY = Math.Abs(this.Y - targetCoordinates.Y);
+
+            //Using diagonal shortcut heuristics.
+            //The shorter axis limits how many nodes you can theoretically move diagonally.
+            //The remainder must be traveled horizontally or vertically.
+            if(distanceY<distanceX)
+            {
+                this.H = (14 * distanceY) + (10 * (distanceX - distanceY));
+            }
+            else
+            {
+                this.H = (14 * distanceX) + (10 * (distanceY - distanceX));
+            }
+
+            this.F = this.G + this.H;
+        }
+
+        internal bool ReCalculateG(Node node, Point targetCoordinates)
+        {
+            int newG;
+
+            if (node.X != this.X && node.Y != this.Y)
+            {
+                newG = node.G + 14;
+            }
+            else
+            {
+                newG = node.G + 10;
+            }
+
+            if (newG < this.G)
+            {
+                this.ParentX = node.X;
+                this.ParentY = node.Y;
+
+                this.G = newG;
+                this.F = this.G + this.H;
+
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
     }
 
     enum RGBColorMask { Blue = 0, Green = 1, Red = 2};
@@ -182,7 +247,7 @@ namespace MazeSolver
                 #endregion
 
                 //Build the graph from the source image and calculate average start/end points. Lists and Points are modified.
-                mazeGraph = BuildNodeGraph(args, startPoints, endPoints, averageStartPoint, averageEndPoint);
+                mazeGraph = BuildNodeGraph(args, startPoints, endPoints, ref averageStartPoint, ref averageEndPoint);
                 
                 //Find starting and ending pixels.
                 bool checkStartStop = false;
@@ -199,7 +264,18 @@ namespace MazeSolver
                 //Code the A* pathfinding algorithm.
                 if (checkStartStop)
                 {
-                    //WE'RE IN BUSINESS!
+                    //Dispose of the start and endpoint lists -- they're no longer needed for the duration of the program.
+                    //Normally I'd leave this to the garbage collector, but we haven't even started running the A* algorithm yet!
+                    startPoints = null;
+                    endPoints = null;
+
+                    bool PathFound = false;
+
+                    openList.Add(mazeGraph[averageStartPoint.X, averageStartPoint.Y]); //NEED TO ALSO SET INITIAL G VALUE****
+
+                    PathFound = AStarPathfinding(mazeGraph, openList, closedList, averageStartPoint, averageEndPoint);
+
+                    int breakpoint = 1;
                 }
 
                 //Either convert the matrix w/ path to an image, or draw on top of the old one.
@@ -207,6 +283,68 @@ namespace MazeSolver
 
             return;
         }
+
+        private static bool AStarPathfinding(Node[,] mazeGraph, SortedSet<Node> openList, SortedSet<Node> closedList, Point startingNodeCoordinates, Point targetCoordinates)
+        {
+            int nodeX = startingNodeCoordinates.X;
+            int nodeY = startingNodeCoordinates.Y;
+
+            if(nodeX == targetCoordinates.X && nodeY == targetCoordinates.Y)
+            {
+                openList.Remove(mazeGraph[nodeX, nodeY]);
+                closedList.Add(mazeGraph[nodeX, nodeY]);
+                //Other cleanup?
+                return true;
+            }
+            else
+            {
+                openList.Remove(mazeGraph[nodeX, nodeY]);
+                closedList.Add(mazeGraph[nodeX, nodeY]);
+
+                for (int x = -1; x < 2; x++)
+                {
+                    for (int y = -1; y < 2; y++)
+                    {
+                        //We obviously don't need to do anything for the node we're currently on.
+                        if(x!=0 && y!=0)
+                        {
+                            int loopX = nodeX+x;
+                            int loopY = nodeY+y;
+
+                            //This is needed to avoid potential out-of-index errors.
+                            if (loopX>=0 && loopY>=0)
+                            {
+                                if (mazeGraph[loopX, loopY].Walkable && !closedList.Contains(mazeGraph[loopX, loopY]))
+                                {
+                                    if (!openList.Contains(mazeGraph[loopX, loopY]))
+                                    {
+                                        mazeGraph[loopX, loopY].CalculateF(mazeGraph[nodeX, nodeY], targetCoordinates);
+                                        openList.Add(mazeGraph[loopX, loopY]);
+                                    }
+                                    else
+                                    {
+                                        //Might want to consider a check method that would allow me to avoid removing it from the openList just to check it.
+                                        openList.Remove(mazeGraph[loopX, loopY]);
+
+                                        bool nodeUpdated = mazeGraph[loopX, loopY].ReCalculateG(mazeGraph[nodeX, nodeY], targetCoordinates);
+
+                                        openList.Add(mazeGraph[loopX, loopY]);
+                                    }
+                                    
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Node lowestFNode = openList.Min;
+                Point nextNode = new Point(lowestFNode.X, lowestFNode.Y);
+
+                return AStarPathfinding(mazeGraph, openList, closedList, nextNode, targetCoordinates);
+            }
+        }
+
+
 
         /// <summary>
         /// Method for verifying the start and stop points calculated by the graph generation.
@@ -306,7 +444,7 @@ namespace MazeSolver
         /// </summary>
         /// <param name="args">The original program arguments.</param>
         /// <returns>The generated Node array.</returns>
-        private static Node[,] BuildNodeGraph(string[] args, List<Point> startPoints, List<Point> endPoints, Point averageStartPoint, Point averageEndPoint)
+        private static Node[,] BuildNodeGraph(string[] args, List<Point> startPoints, List<Point> endPoints, ref Point averageStartPoint, ref Point averageEndPoint)
         {
             Node[,] localMazeGraph;
             int startingPointXSum = 0, startingPointYSum = 0, numberOfStartingPoints = 0;
@@ -421,7 +559,8 @@ namespace MazeSolver
             {
                 double averageStartX = (double)startingPointXSum/(double)numberOfStartingPoints;
                 double averageStartY = (double)startingPointYSum / (double)numberOfStartingPoints;
-                averageStartPoint = new Point(Convert.ToInt32(Math.Round(averageStartX)), Convert.ToInt32(Math.Round(averageStartY)));
+                averageStartPoint.X = Convert.ToInt32(Math.Round(averageStartX));
+                averageStartPoint.Y = Convert.ToInt32(Math.Round(averageStartY));
             }
             else
             {
@@ -432,7 +571,8 @@ namespace MazeSolver
             {
                 double averageEndX = (double)endingPointXSum / (double)numberOfEndingPoints;
                 double averageEndY = (double)endingPointYSum / (double)numberOfEndingPoints;
-                averageStartPoint = new Point(Convert.ToInt32(Math.Round(averageEndX)), Convert.ToInt32(Math.Round(averageEndY)));
+                averageEndPoint.X = Convert.ToInt32(Math.Round(averageEndX));
+                averageEndPoint.Y = Convert.ToInt32(Math.Round(averageEndY));
             }
             else
             {
