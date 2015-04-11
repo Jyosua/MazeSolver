@@ -14,7 +14,7 @@ namespace MazeSolver
     /// The Node class is all of the information related to a single pixel in the loaded image.
     /// We are implementing the IComparable interface because the SortedSet we're using as a priority queue needs to know how to order the Nodes properly.
     /// </summary>
-    class Node : IComparable<Node>
+    public class Node : IComparable<Node>
     {
         /// <summary>
         /// Node ID. Needed to implement the IComparable interface correctly.
@@ -66,6 +66,24 @@ namespace MazeSolver
         /// Whether or not this node can be placed on the open list.
         /// </summary>
         public bool Walkable
+        {
+            get;
+            private set;
+        }
+
+        public bool Open
+        {
+            get;
+            private set;
+        }
+
+        public bool Closed
+        {
+            get;
+            private set;
+        }
+
+        public Int64 Ticks
         {
             get;
             private set;
@@ -123,6 +141,10 @@ namespace MazeSolver
             {
                 Walkable = false;
             }
+
+            this.Open = false;
+            this.Closed = false;
+            this.Ticks = 0;
         }
 
         /// <summary>
@@ -132,26 +154,46 @@ namespace MazeSolver
         /// <returns>Whether "this" Node should precede "that" node in the Sort order. -1 precedes, 1 follows, and 0 indicates the same Node.</returns>
         public int CompareTo(Node that)
         {
-            if (this.F < that.F)
+            //SortedSet throws away duplicates, so we need to compare IDs to ensure that different Nodes with equal weights are not tossed.
+            if (this.ID == that.ID)
             {
-                return -1;
-            }
-            else if (this.F > that.F)
-            {
-                return 1;
+                return 0;
             }
             else
             {
-                //SortedSet throws away duplicates, so we need to compare IDs to ensure that different Nodes with equal weights are not tossed.
-                if (this.ID == that.ID)
+                if (this.F < that.F)
                 {
-                    return 0;
+                    return -1;
+                }
+                else if (this.F > that.F)
+                {
+                    return 1;
                 }
                 else
                 {
                     //We want to prioritize items added to the list last.
                     //If the Node isn't actually a duplicate, later items are of greater priority.
-                    return -1;
+                    if (this.Ticks > that.Ticks)
+                    {
+                        return -1;
+                    }
+                    else if (this.Ticks < that.Ticks)
+                    {
+                        return 1;
+                    }
+                    else
+                    {
+                        //This case should basically never happen, but is a failsafe.
+                        if(this.ID>that.ID)
+                        {
+                            return -1;
+                        }
+                        else
+                        {
+                            return 1;
+                        }
+                    }
+                    
                 }
             }
         }
@@ -192,7 +234,7 @@ namespace MazeSolver
             this.F = this.G + this.H;
         }
 
-        internal bool ReCalculateG(Node node, Point targetCoordinates)
+        internal bool ReCalculateG(Node node, Point targetCoordinates, Int64 ticks)
         {
             int newG;
 
@@ -213,6 +255,8 @@ namespace MazeSolver
                 this.G = newG;
                 this.F = this.G + this.H;
 
+                this.Ticks = ticks;
+
                 return true;
             }
             else
@@ -228,6 +272,22 @@ namespace MazeSolver
             //-1 will indicate it's the start point later on.
             this.ParentX = -1;
             this.ParentY = -1;
+        }
+
+        internal void AddToClosedList()
+        {
+            this.Closed = true;
+        }
+
+        internal void AddToOpenList(Int64 ticks)
+        {
+            this.Open = true;
+            this.Ticks = ticks;
+        }
+
+        internal void RemoveFromOpenList()
+        {
+            this.Open = false;
         }
     }
 
@@ -252,7 +312,6 @@ namespace MazeSolver
                 //Technically, the program could probably run slightly faster if I implemented my own priority queue,
                 //but sorted sets exist in C# and are easier for a third party to read and understand.
                 SortedSet<Node> openList = new SortedSet<Node>();
-                SortedSet<Node> closedList = new SortedSet<Node>();
                 #endregion
 
                 //Build the graph from the source image and calculate average start/end points. Lists and Points are modified.
@@ -283,9 +342,9 @@ namespace MazeSolver
                     mazeGraph[averageStartPoint.X, averageStartPoint.Y].SetStartPoint();
                     openList.Add(mazeGraph[averageStartPoint.X, averageStartPoint.Y]); //NEED TO ALSO SET INITIAL G VALUE****
 
-                    PathFound = AStarPathfinding(mazeGraph, openList, closedList, averageStartPoint, averageEndPoint);
+                    PathFound = AStarPathfinding(mazeGraph, openList, averageStartPoint, averageEndPoint);
 
-                    int breakpoint = 1;
+                    int breakpointsuccess = 1;
                 }
 
                 //Either convert the matrix w/ path to an image, or draw on top of the old one.
@@ -294,64 +353,100 @@ namespace MazeSolver
             return;
         }
 
-        private static bool AStarPathfinding(Node[,] mazeGraph, SortedSet<Node> openList, SortedSet<Node> closedList, Point startingNodeCoordinates, Point targetCoordinates)
+        private static bool AStarPathfinding(Node[,] mazeGraph, SortedSet<Node> openList, Point startingNodeCoordinates, Point targetCoordinates)
         {
             int nodeX = startingNodeCoordinates.X;
             int nodeY = startingNodeCoordinates.Y;
 
-            if(nodeX == targetCoordinates.X && nodeY == targetCoordinates.Y)
-            {
-                openList.Remove(mazeGraph[nodeX, nodeY]);
-                closedList.Add(mazeGraph[nodeX, nodeY]);
-                //Other cleanup?
-                return true;
-            }
-            else
-            {
-                openList.Remove(mazeGraph[nodeX, nodeY]);
-                closedList.Add(mazeGraph[nodeX, nodeY]);
+            bool pathFound = false;
+            Int64 ticks = 0;
 
-                for (int x = -1; x < 2; x++)
+            while (!pathFound)
+            {
+                ticks++;
+                if (nodeX == targetCoordinates.X && nodeY == targetCoordinates.Y)
                 {
-                    for (int y = -1; y < 2; y++)
+                    openList.Remove(mazeGraph[nodeX, nodeY]);
+                    mazeGraph[nodeX, nodeY].RemoveFromOpenList();
+                    mazeGraph[nodeX, nodeY].AddToClosedList();
+                    //Other cleanup?
+                    pathFound = true;
+                }
+                else
+                {
+                    if (nodeX == 242 && nodeY == 417)
                     {
-                        //We obviously don't need to do anything for the node we're currently on.
-                        if(x!=0 && y!=0)
+                        int breakpoint = 1;
+                    }
+
+                    //Console.WriteLine("-----------------------------------------------------------------\n");
+                    //Console.WriteLine("-----------------------------------------------------------------\n");
+                    //Console.WriteLine("-----------------------------------------------------------------\n");
+                    Console.WriteLine("Current Node: " + nodeX.ToString() + ", " + nodeY.ToString() + "\n");
+
+                    openList.Remove(mazeGraph[nodeX, nodeY]);
+                    mazeGraph[nodeX, nodeY].RemoveFromOpenList();
+                    mazeGraph[nodeX, nodeY].AddToClosedList();
+
+                    for (int x = -1; x < 2; x++)
+                    {
+                        for (int y = -1; y < 2; y++)
                         {
-                            int loopX = nodeX+x;
-                            int loopY = nodeY+y;
-
-                            //This is needed to avoid potential out-of-index errors.
-                            if (loopX>=0 && loopY>=0)
+                            //We obviously don't need to do anything for the node we're currently on.
+                            if (!(x == 0 && y == 0))
                             {
-                                if (mazeGraph[loopX, loopY].Walkable && !closedList.Contains(mazeGraph[loopX, loopY]))
+                                int loopX = nodeX + x;
+                                int loopY = nodeY + y;
+
+                                //This is needed to avoid potential out-of-index errors.
+                                if (loopX >= 0 && loopY >= 0)
                                 {
-                                    if (!openList.Contains(mazeGraph[loopX, loopY]))
+                                    //Console.WriteLine("-----------------------------------------------------------------\n");
+                                    //Console.WriteLine("Examining " + loopX.ToString() + ", " + loopY.ToString() + " -- Walkable: " + mazeGraph[loopX, loopY].Walkable.ToString() + " - Closed: " + mazeGraph[loopX, loopY].Closed.ToString() + "\n");
+                                    if (mazeGraph[loopX, loopY].Walkable && !mazeGraph[loopX, loopY].Closed)
                                     {
-                                        mazeGraph[loopX, loopY].CalculateF(mazeGraph[nodeX, nodeY], targetCoordinates);
-                                        openList.Add(mazeGraph[loopX, loopY]);
-                                    }
-                                    else
-                                    {
-                                        //Might want to consider a check method that would allow me to avoid removing it from the openList just to check it.
-                                        openList.Remove(mazeGraph[loopX, loopY]);
+                                        //Console.WriteLine("---------- Open: " + mazeGraph[loopX, loopY].Open.ToString() + "\n");
+                                        if (!mazeGraph[loopX, loopY].Open)
+                                        {
+                                            mazeGraph[loopX, loopY].CalculateF(mazeGraph[nodeX, nodeY], targetCoordinates);
+                                            openList.Add(mazeGraph[loopX, loopY]);
+                                            mazeGraph[loopX, loopY].AddToOpenList(ticks);
+                                            //Console.WriteLine("Added to Open List " + loopX.ToString() + ", " + loopY.ToString() + " -- Open: " + mazeGraph[loopX, loopY].Open.ToString() + "\n");
+                                        }
+                                        else
+                                        {
+                                            //Might want to consider a check method that would allow me to avoid removing it from the openList just to check it.
+                                            openList.Remove(mazeGraph[loopX, loopY]);
 
-                                        bool nodeUpdated = mazeGraph[loopX, loopY].ReCalculateG(mazeGraph[nodeX, nodeY], targetCoordinates);
+                                            bool nodeUpdated = mazeGraph[loopX, loopY].ReCalculateG(mazeGraph[nodeX, nodeY], targetCoordinates, ticks);
 
-                                        openList.Add(mazeGraph[loopX, loopY]);
+                                            openList.Add(mazeGraph[loopX, loopY]);
+
+                                            //Console.WriteLine("Recalculated G " + loopX.ToString() + ", " + loopY.ToString() + " -- Open: " + mazeGraph[loopX, loopY].Open.ToString() + "\n");
+
+                                        }
+
                                     }
-                                    
                                 }
                             }
                         }
                     }
+
+                    if (openList.Count != 0)
+                    {
+                        Node lowestFNode = openList.Min;
+                        nodeX = lowestFNode.X;
+                        nodeY = lowestFNode.Y;
+                    }
+                    else
+                    {
+                        //No path exists.
+                        break;
+                    }
                 }
-
-                Node lowestFNode = openList.Min;
-                Point nextNode = new Point(lowestFNode.X, lowestFNode.Y);
-
-                return AStarPathfinding(mazeGraph, openList, closedList, nextNode, targetCoordinates);
             }
+
+            return pathFound;
         }
 
 
