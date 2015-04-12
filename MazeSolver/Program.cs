@@ -127,7 +127,12 @@ namespace MazeSolver
 
             this.Color = pixelColor;
 
-            if (pixelColor == Color.FromArgb(255, 0, 0) || pixelColor == Color.FromArgb(0, 0, 255) || pixelColor == Color.FromArgb(255, 255, 255))
+            bool pixelColorRed = ((255 - pixelColor.R) < 56 && (255 - pixelColor.G) > 128 && (255 - pixelColor.B) > 128);
+            bool pixelColorBlue = ((255 - pixelColor.R) > 128 && (255 - pixelColor.G) > 128 && (255 - pixelColor.B) < 56);
+            bool pixelColorWhite = ((255 - pixelColor.R) < 20 && (255 - pixelColor.G) < 20 && (255 - pixelColor.B) < 20);
+
+            //if (pixelColor == Color.FromArgb(255, 0, 0) || pixelColor == Color.FromArgb(0, 0, 255) || pixelColor == Color.FromArgb(255, 255, 255)) //No Tolerance
+            if (pixelColorRed || pixelColorBlue || pixelColorWhite)
             {
                 Walkable = true;
             }
@@ -374,9 +379,6 @@ namespace MazeSolver
             Marshal.Copy(linePointer, bitmapRGBValues, 0, numberOfBytes);
 
             //Default loop values.
-            int blue = 0;
-            int green = 0;
-            int red = 0;
             Color currentColor = new Color();
 
             while (!(parentNodeX == -1 && parentNodeY == -1)) //The node with these settings is our start node.
@@ -385,13 +387,16 @@ namespace MazeSolver
 
                 int pixelBytePosition = (strideLength * currentNodeY) + (3 * currentNodeX);
 
-                blue = bitmapRGBValues[pixelBytePosition];
-                green = bitmapRGBValues[pixelBytePosition+1];
-                red = bitmapRGBValues[pixelBytePosition+2];
+                int blue = bitmapRGBValues[pixelBytePosition];
+                int green = bitmapRGBValues[pixelBytePosition+1];
+                int red = bitmapRGBValues[pixelBytePosition+2];
 
                 currentColor = Color.FromArgb(red, green, blue);
+                bool currentColorIsRed = ((255 - currentColor.R) < 56 && (255 - currentColor.G) > 128 && (255 - currentColor.B) > 128);
+                bool currentColorIsBlue = ((255 - currentColor.R) > 128 && (255 - currentColor.G) > 128 && (255 - currentColor.B) < 56);
 
-                if (!(currentColor == Color.FromArgb(255, 0, 0) || currentColor == Color.FromArgb(0, 0, 255))) //No reason to color over the start and stop colors.
+                //if (!(currentColor == Color.FromArgb(255, 0, 0) || currentColor == Color.FromArgb(0, 0, 255))) //No Tolerance
+                if (!(currentColorIsRed || currentColorIsBlue)) //No reason to color over the start and stop colors.
                 {
                     bitmapRGBValues[pixelBytePosition] = 0;
                     bitmapRGBValues[pixelBytePosition + 1] = 255;
@@ -679,14 +684,17 @@ namespace MazeSolver
                             //Create the node
                             localMazeGraph[pixelX, pixelY] = new Node(pixelX, pixelY, imageWidth, currentColor);
 
-                            if (currentColor == Color.FromArgb(255, 0, 0))
+                            //if (currentColor == Color.FromArgb(255, 0, 0)) //No Tolerance
+                            if ((255 - currentColor.R) < 56 && (255 - currentColor.G) > 128 && (255 - currentColor.B) > 128)
                             {
                                 //Add coordinates to potential start point list
                                 startPoints.Add(new Point(pixelX, pixelY));
                                 startingPointXSum += pixelX;
                                 startingPointYSum += pixelY;
                                 numberOfStartingPoints++;
-                            }else if(currentColor == Color.FromArgb(0,0,255))
+                            }
+                            //else if(currentColor == Color.FromArgb(0, 0, 255)) //No Tolerance
+                            else if ((255 - currentColor.R) > 128 && (255 - currentColor.G) > 128 && (255 - currentColor.B) < 56)
                             {
                                 //Add coordinates to potential end point list
                                 endPoints.Add(new Point(pixelX, pixelY));
