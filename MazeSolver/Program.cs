@@ -171,29 +171,16 @@ namespace MazeSolver
                 }
                 else
                 {
-                    //We want to prioritize items added to the list last.
-                    //If the Node isn't actually a duplicate, later items are of greater priority.
-                    if (this.Ticks > that.Ticks)
+                    //Might want to find a way to optimize this part to give greater weight to more recent nodes.
+                    //Doing it here introduced a bug, so it probably needs to be done somewhere in the F calculation.
+                    if (this.ID < that.ID)
                     {
                         return -1;
                     }
-                    else if (this.Ticks < that.Ticks)
-                    {
-                        return 1;
-                    }
                     else
                     {
-                        //This case should basically never happen, but is a failsafe.
-                        if(this.ID>that.ID)
-                        {
-                            return -1;
-                        }
-                        else
-                        {
-                            return 1;
-                        }
-                    }
-                    
+                        return 1;
+                    }                   
                 }
             }
         }
@@ -374,7 +361,7 @@ namespace MazeSolver
                 }
                 else
                 {
-                    if (nodeX == 242 && nodeY == 417)
+                    if (nodeX == 230 && nodeY == 419)
                     {
                         int breakpoint = 1;
                     }
