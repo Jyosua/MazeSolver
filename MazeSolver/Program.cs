@@ -83,12 +83,6 @@ namespace MazeSolver
             private set;
         }
 
-        public Int64 Ticks
-        {
-            get;
-            private set;
-        }
-
         /// <summary>
         /// Pixel color.
         /// </summary>
@@ -144,7 +138,6 @@ namespace MazeSolver
 
             this.Open = false;
             this.Closed = false;
-            this.Ticks = 0;
         }
 
         /// <summary>
@@ -221,7 +214,7 @@ namespace MazeSolver
             this.F = this.G + this.H;
         }
 
-        internal bool ReCalculateG(Node node, Point targetCoordinates, Int64 ticks)
+        internal bool ReCalculateG(Node node, Point targetCoordinates)
         {
             int newG;
 
@@ -241,8 +234,6 @@ namespace MazeSolver
 
                 this.G = newG;
                 this.F = this.G + this.H;
-
-                this.Ticks = ticks;
 
                 return true;
             }
@@ -266,10 +257,9 @@ namespace MazeSolver
             this.Closed = true;
         }
 
-        internal void AddToOpenList(Int64 ticks)
+        internal void AddToOpenList()
         {
             this.Open = true;
-            this.Ticks = ticks;
         }
 
         internal void RemoveFromOpenList()
@@ -286,8 +276,12 @@ namespace MazeSolver
         {
             if (ArgCheck(args))
             {
-                #region Variable Declarations
+                #region Variable declarations
                 Node[,] mazeGraph;
+                Bitmap preconvertSourceImage;
+                Bitmap sourceImage;
+                Bitmap destinationImage;
+                bool PathFound = false;
 
                 //These are for calculating the average start and stop points.
                 List<Point> startPoints = new List<Point>();
@@ -295,14 +289,27 @@ namespace MazeSolver
                 Point averageStartPoint = new Point();
                 Point averageEndPoint = new Point();
 
-                //I'm going to use SortedSets here, since they're implemented using self-balancing red-black trees.
-                //Technically, the program could probably run slightly faster if I implemented my own priority queue,
+                //I'm going to use a SortedSet here, since they're implemented using self-balancing red-black trees.
+                //Technically, the program could probably run slightly faster if I fully implemented my own priority queue,
                 //but sorted sets exist in C# and are easier for a third party to read and understand.
                 SortedSet<Node> openList = new SortedSet<Node>();
                 #endregion
 
+                #region Reading in and processing the image file
+                //Convert the picture file to a common format.
+                //A 24bpp should be sufficient and is easy to work with. We also don't care about alpha channel data.
+                preconvertSourceImage = new Bitmap(args[0]);
+                sourceImage = new Bitmap(preconvertSourceImage.Width, preconvertSourceImage.Height, PixelFormat.Format24bppRgb);
+                using (Graphics drawingSurface = Graphics.FromImage(sourceImage))
+                {
+                    drawingSurface.DrawImage(preconvertSourceImage, new Rectangle(0, 0, sourceImage.Width, sourceImage.Height));
+                }
+
+                //Don't need the original bitmap anymore, so might as well free the memory.
+                preconvertSourceImage.Dispose();
+
                 //Build the graph from the source image and calculate average start/end points. Lists and Points are modified.
-                mazeGraph = BuildNodeGraph(args, startPoints, endPoints, ref averageStartPoint, ref averageEndPoint);
+                mazeGraph = BuildNodeGraph(sourceImage, startPoints, endPoints, ref averageStartPoint, ref averageEndPoint);
                 
                 //Find starting and ending pixels.
                 bool checkStartStop = false;
@@ -315,6 +322,7 @@ namespace MazeSolver
                     Console.WriteLine("Start/Stop criteria missing! Cannot begin pathfinding!");
                     return;
                 }
+                #endregion
 
                 //Code the A* pathfinding algorithm.
                 if (checkStartStop)
@@ -324,20 +332,82 @@ namespace MazeSolver
                     startPoints = null;
                     endPoints = null;
 
-                    bool PathFound = false;
-
                     mazeGraph[averageStartPoint.X, averageStartPoint.Y].SetStartPoint();
                     openList.Add(mazeGraph[averageStartPoint.X, averageStartPoint.Y]); //NEED TO ALSO SET INITIAL G VALUE****
 
                     PathFound = AStarPathfinding(mazeGraph, openList, averageStartPoint, averageEndPoint);
-
-                    int breakpointsuccess = 1;
                 }
 
                 //Either convert the matrix w/ path to an image, or draw on top of the old one.
+                if (PathFound)
+                {
+                    destinationImage = DrawPath(sourceImage, mazeGraph, averageEndPoint);
+                    destinationImage.Save(args[1]);
+                }
             }
 
             return;
+        }
+
+        private static Bitmap DrawPath(Bitmap sourceImage, Node[,] mazeGraph, Point averageEndPoint)
+        {
+            int imageWidth = sourceImage.Width;
+            int imageHeight = sourceImage.Height;
+            int currentNodeX = mazeGraph[averageEndPoint.X, averageEndPoint.Y].X;
+            int currentNodeY = mazeGraph[averageEndPoint.X, averageEndPoint.Y].Y;
+            int parentNodeX = mazeGraph[averageEndPoint.X, averageEndPoint.Y].ParentX;
+            int parentNodeY = mazeGraph[averageEndPoint.X, averageEndPoint.Y].ParentY;
+
+            //Creating a BitmapData object for reading and future manipulation of the image.
+            Rectangle imageDimensions = new Rectangle(0, 0, imageWidth, imageHeight);
+            BitmapData destinationImageData = sourceImage.LockBits(imageDimensions, System.Drawing.Imaging.ImageLockMode.ReadWrite, sourceImage.PixelFormat);
+
+            //First pixel data in the bitmap.
+            //This is an unmanaged pointer and, with the way Marshal Copy works, it's probably just easier to copy the data into a 1-dimensional array first.
+            //This could be done more efficiently with unsafe code and pointer manipulation.
+            IntPtr linePointer = destinationImageData.Scan0;
+            int strideLength = Math.Abs(destinationImageData.Stride);
+            int numberOfBytes = strideLength * imageHeight;
+            byte[] bitmapRGBValues = new byte[numberOfBytes];
+
+            //Copy the data into our byte array.
+            Marshal.Copy(linePointer, bitmapRGBValues, 0, numberOfBytes);
+
+            //Default loop values.
+            int blue = 0;
+            int green = 0;
+            int red = 0;
+            Color currentColor = new Color();
+
+            while (!(parentNodeX == -1 && parentNodeY == -1)) //The node with these settings is our start node.
+            {
+                Console.WriteLine("Drawing Node: " + currentNodeX.ToString() + ", " + currentNodeY.ToString() + "\n");
+
+                int pixelBytePosition = (strideLength * currentNodeY) + (3 * currentNodeX);
+
+                blue = bitmapRGBValues[pixelBytePosition];
+                green = bitmapRGBValues[pixelBytePosition+1];
+                red = bitmapRGBValues[pixelBytePosition+2];
+
+                currentColor = Color.FromArgb(red, green, blue);
+
+                if (!(currentColor == Color.FromArgb(255, 0, 0) || currentColor == Color.FromArgb(0, 0, 255))) //No reason to color over the start and stop colors.
+                {
+                    bitmapRGBValues[pixelBytePosition] = 0;
+                    bitmapRGBValues[pixelBytePosition + 1] = 255;
+                    bitmapRGBValues[pixelBytePosition + 2] = 0;
+                }
+
+                currentNodeX = parentNodeX;
+                currentNodeY = parentNodeY;
+                parentNodeX = mazeGraph[currentNodeX, currentNodeY].ParentX;
+                parentNodeY = mazeGraph[currentNodeX, currentNodeY].ParentY;
+            }
+
+            System.Runtime.InteropServices.Marshal.Copy(bitmapRGBValues, 0, linePointer, numberOfBytes);
+            sourceImage.UnlockBits(destinationImageData);
+
+            return sourceImage;
         }
 
         private static bool AStarPathfinding(Node[,] mazeGraph, SortedSet<Node> openList, Point startingNodeCoordinates, Point targetCoordinates)
@@ -346,11 +416,9 @@ namespace MazeSolver
             int nodeY = startingNodeCoordinates.Y;
 
             bool pathFound = false;
-            Int64 ticks = 0;
 
             while (!pathFound)
             {
-                ticks++;
                 if (nodeX == targetCoordinates.X && nodeY == targetCoordinates.Y)
                 {
                     openList.Remove(mazeGraph[nodeX, nodeY]);
@@ -361,14 +429,6 @@ namespace MazeSolver
                 }
                 else
                 {
-                    if (nodeX == 230 && nodeY == 419)
-                    {
-                        int breakpoint = 1;
-                    }
-
-                    //Console.WriteLine("-----------------------------------------------------------------\n");
-                    //Console.WriteLine("-----------------------------------------------------------------\n");
-                    //Console.WriteLine("-----------------------------------------------------------------\n");
                     Console.WriteLine("Current Node: " + nodeX.ToString() + ", " + nodeY.ToString() + "\n");
 
                     openList.Remove(mazeGraph[nodeX, nodeY]);
@@ -382,37 +442,62 @@ namespace MazeSolver
                             //We obviously don't need to do anything for the node we're currently on.
                             if (!(x == 0 && y == 0))
                             {
+                                //Actual pixel numbers
                                 int loopX = nodeX + x;
                                 int loopY = nodeY + y;
 
                                 //This is needed to avoid potential out-of-index errors.
-                                if (loopX >= 0 && loopY >= 0)
+                                if (loopX >= 0 && loopX < mazeGraph.GetLength(0) && loopY >= 0 && loopY < mazeGraph.GetLength(1))
                                 {
-                                    //Console.WriteLine("-----------------------------------------------------------------\n");
-                                    //Console.WriteLine("Examining " + loopX.ToString() + ", " + loopY.ToString() + " -- Walkable: " + mazeGraph[loopX, loopY].Walkable.ToString() + " - Closed: " + mazeGraph[loopX, loopY].Closed.ToString() + "\n");
-                                    if (mazeGraph[loopX, loopY].Walkable && !mazeGraph[loopX, loopY].Closed)
+                                    //This is to prevent cutting corners and squeezing through walls
+                                    bool leftmostAdjacentWalkable = true;
+                                    bool rightmostAdjacentWalkable = true;
+                                    int adjacentSquareNumber = (x + 1) + (3 * (y + 1));
+
+                                    //Array index checks are not needed for this switch block, because we've already know if the center node and current corner are in bounds.
+                                    //If they are, then by definition these operations are valid and in bounds.
+                                    switch (adjacentSquareNumber)
                                     {
-                                        //Console.WriteLine("---------- Open: " + mazeGraph[loopX, loopY].Open.ToString() + "\n");
-                                        if (!mazeGraph[loopX, loopY].Open)
+                                        case 0:
+                                            leftmostAdjacentWalkable = mazeGraph[loopX, loopY + 1].Walkable;
+                                            rightmostAdjacentWalkable = mazeGraph[loopX + 1, loopY].Walkable;
+                                            break;
+                                        case 2:
+                                            leftmostAdjacentWalkable = mazeGraph[loopX - 1, loopY].Walkable;
+                                            rightmostAdjacentWalkable = mazeGraph[loopX, loopY + 1].Walkable;
+                                            break;
+                                        case 6:
+                                            leftmostAdjacentWalkable = mazeGraph[loopX, loopY - 1].Walkable;
+                                            rightmostAdjacentWalkable = mazeGraph[loopX + 1, loopY].Walkable;
+                                            break;
+                                        case 8:
+                                            leftmostAdjacentWalkable = mazeGraph[loopX - 1, loopY].Walkable;
+                                            rightmostAdjacentWalkable = mazeGraph[loopX, loopY - 1].Walkable;
+                                            break;
+                                    }
+
+                                    if (leftmostAdjacentWalkable && rightmostAdjacentWalkable)
+                                    {
+
+                                        if (mazeGraph[loopX, loopY].Walkable && !mazeGraph[loopX, loopY].Closed)
                                         {
-                                            mazeGraph[loopX, loopY].CalculateF(mazeGraph[nodeX, nodeY], targetCoordinates);
-                                            openList.Add(mazeGraph[loopX, loopY]);
-                                            mazeGraph[loopX, loopY].AddToOpenList(ticks);
-                                            //Console.WriteLine("Added to Open List " + loopX.ToString() + ", " + loopY.ToString() + " -- Open: " + mazeGraph[loopX, loopY].Open.ToString() + "\n");
+                                            if (!mazeGraph[loopX, loopY].Open)
+                                            {
+                                                mazeGraph[loopX, loopY].CalculateF(mazeGraph[nodeX, nodeY], targetCoordinates);
+                                                openList.Add(mazeGraph[loopX, loopY]);
+                                                mazeGraph[loopX, loopY].AddToOpenList();
+                                            }
+                                            else
+                                            {
+                                                //Might want to consider a check method that would allow me to avoid removing it from the openList just to check it.
+                                                openList.Remove(mazeGraph[loopX, loopY]);
+
+                                                bool nodeUpdated = mazeGraph[loopX, loopY].ReCalculateG(mazeGraph[nodeX, nodeY], targetCoordinates);
+
+                                                openList.Add(mazeGraph[loopX, loopY]);
+                                            }
+
                                         }
-                                        else
-                                        {
-                                            //Might want to consider a check method that would allow me to avoid removing it from the openList just to check it.
-                                            openList.Remove(mazeGraph[loopX, loopY]);
-
-                                            bool nodeUpdated = mazeGraph[loopX, loopY].ReCalculateG(mazeGraph[nodeX, nodeY], targetCoordinates, ticks);
-
-                                            openList.Add(mazeGraph[loopX, loopY]);
-
-                                            //Console.WriteLine("Recalculated G " + loopX.ToString() + ", " + loopY.ToString() + " -- Open: " + mazeGraph[loopX, loopY].Open.ToString() + "\n");
-
-                                        }
-
                                     }
                                 }
                             }
@@ -536,23 +621,11 @@ namespace MazeSolver
         /// </summary>
         /// <param name="args">The original program arguments.</param>
         /// <returns>The generated Node array.</returns>
-        private static Node[,] BuildNodeGraph(string[] args, List<Point> startPoints, List<Point> endPoints, ref Point averageStartPoint, ref Point averageEndPoint)
+        private static Node[,] BuildNodeGraph(Bitmap sourceImage, List<Point> startPoints, List<Point> endPoints, ref Point averageStartPoint, ref Point averageEndPoint)
         {
             Node[,] localMazeGraph;
             int startingPointXSum = 0, startingPointYSum = 0, numberOfStartingPoints = 0;
             int endingPointXSum = 0, endingPointYSum = 0, numberOfEndingPoints = 0;
-
-            //Read in the picture file and convert to a common format.
-            //A 24bpp should be sufficient and is easy to work with. We also don't care about alpha channel data.
-            Bitmap preconvertSourceImage = new Bitmap(args[0]);
-            Bitmap sourceImage = new Bitmap(preconvertSourceImage.Width, preconvertSourceImage.Height, PixelFormat.Format24bppRgb);
-            using (Graphics drawingSurface = Graphics.FromImage(sourceImage))
-            {
-                drawingSurface.DrawImage(preconvertSourceImage, new Rectangle(0, 0, sourceImage.Width, sourceImage.Height));
-            }
-
-            //Don't need the original bitmap anymore, so might as well free the memory.
-            preconvertSourceImage.Dispose();
 
             int imageWidth = sourceImage.Width;
             int imageHeight = sourceImage.Height;
@@ -670,6 +743,9 @@ namespace MazeSolver
             {
                 Console.WriteLine("No end points found!");
             }
+
+            //Free the memory used for the image, for now.
+            sourceImage.UnlockBits(sourceImageData);
 
             return localMazeGraph;
         }
