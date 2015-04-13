@@ -371,7 +371,10 @@ namespace MazeSolver
                     PathFound = AStarPathfinding(mazeGraph, openList, averageStartPoint, averageEndPoint);
                 }
                 else
+                {
                     Console.WriteLine("Start/Stop points could not be validated!\nEnsure that that maze does not have multiple groups of start or end points.");
+                    return;
+                }
                 #endregion
 
                 #region Create output image file
