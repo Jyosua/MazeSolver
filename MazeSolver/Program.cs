@@ -392,6 +392,7 @@ namespace MazeSolver
             return;
         }
 
+        #region Program methods
         /// <summary>
         /// Helper method to check the arguments provided via command line.
         /// </summary>
@@ -916,6 +917,6 @@ namespace MazeSolver
 
             return sourceImage;
         }
-
+        #endregion
     }
 }
