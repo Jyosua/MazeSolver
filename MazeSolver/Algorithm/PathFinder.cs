@@ -41,40 +41,36 @@ namespace MazeSolver.Algorithm
 
                 foreach (var direction in Directions.All())
                 {
-                    var offset = direction.GetOffset();
-                    var x = offset.X + node.X;
-                    var y = offset.Y + node.Y;
-                    if (!(x >= 0 && x < graph.Width && y >= 0 && y < graph.Height))
+                    if (!graph.HasNeighbor(node, direction))
                         continue;
 
                     //This is to prevent cutting corners and squeezing through walls
                     bool leftmostAdjacentWalkable = true;
                     bool rightmostAdjacentWalkable = true;
-
                     switch (direction)
                     {
                         case Direction.Northwest:
-                            leftmostAdjacentWalkable = graph.GetNode(x, y + 1).Walkable;
-                            rightmostAdjacentWalkable = graph.GetNode(x + 1, y).Walkable;
+                            leftmostAdjacentWalkable = graph.GetNeighbor(node, Direction.West).Walkable;
+                            rightmostAdjacentWalkable = graph.GetNeighbor(node, Direction.North).Walkable;
                             break;
                         case Direction.Northeast:
-                            leftmostAdjacentWalkable = graph.GetNode(x - 1, y).Walkable;
-                            rightmostAdjacentWalkable = graph.GetNode(x, y + 1).Walkable;
+                            leftmostAdjacentWalkable = graph.GetNeighbor(node, Direction.North).Walkable;
+                            rightmostAdjacentWalkable = graph.GetNeighbor(node, Direction.East).Walkable;
                             break;
                         case Direction.Southwest:
-                            leftmostAdjacentWalkable = graph.GetNode(x, y - 1).Walkable;
-                            rightmostAdjacentWalkable = graph.GetNode(x + 1, y).Walkable;
+                            leftmostAdjacentWalkable = graph.GetNeighbor(node, Direction.West).Walkable;
+                            rightmostAdjacentWalkable = graph.GetNeighbor(node, Direction.South).Walkable;
                             break;
                         case Direction.Southeast:
-                            leftmostAdjacentWalkable = graph.GetNode(x - 1, y).Walkable;
-                            rightmostAdjacentWalkable = graph.GetNode(x, y - 1).Walkable;
+                            leftmostAdjacentWalkable = graph.GetNeighbor(node, Direction.South).Walkable;
+                            rightmostAdjacentWalkable = graph.GetNeighbor(node, Direction.East).Walkable;
                             break;
                     }
 
                     if (!leftmostAdjacentWalkable || !rightmostAdjacentWalkable)
                         continue;
 
-                    var neighbor = graph.GetNode(x, y);
+                    var neighbor = graph.GetNeighbor(node, direction);
 
                     if (!(neighbor.Walkable && !neighbor.Closed))
                         continue;

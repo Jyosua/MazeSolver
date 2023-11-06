@@ -12,6 +12,8 @@ namespace MazeSolver.Tests
 {
     public class ArgumentParserTests
     {
+        static readonly string[] _validArgs = new string[] { "foo", "bar" };
+
         ILogger<ArgumentParser> _logger;
         IFileSystem _fileSystem;
         [SetUp]
@@ -36,7 +38,7 @@ namespace MazeSolver.Tests
 
         [Test]
         [TestCase(new string[] {}, false)]
-        [TestCase(new string[] {"foo"}, false)]
+        [TestCase(new string[] { "foo" }, false)]
         [TestCase(new string[] { "foo", "bar" }, true)]
         [TestCase(new string[] { "foo", "bar", "fizz" }, false)]
         [TestCase(new string[] { "foo", "bar", "fizz", "buzz" }, false)]
@@ -54,7 +56,7 @@ namespace MazeSolver.Tests
             var files = SetupHappyPathFileData();
             files.Item1.Exists.ReturnsForAnyArgs(false);
 
-            var parser = new ArgumentParser(new string[] { "foo", "bar" }, _logger, _fileSystem);
+            var parser = new ArgumentParser(_validArgs, _logger, _fileSystem);
 
             Assert.That(parser.Parse(), Is.EqualTo(false));
         }
@@ -65,7 +67,7 @@ namespace MazeSolver.Tests
             var files = SetupHappyPathFileData();
             files.Item2.Exists.ReturnsForAnyArgs(true);
 
-            var parser = new ArgumentParser(new string[] { "foo", "bar" }, _logger, _fileSystem);
+            var parser = new ArgumentParser(_validArgs, _logger, _fileSystem);
 
             Assert.That(parser.Parse(), Is.EqualTo(false));
         }
@@ -83,7 +85,7 @@ namespace MazeSolver.Tests
             var files = SetupHappyPathFileData();
             files.Item1.Extension.ReturnsForAnyArgs(extension);
 
-            var parser = new ArgumentParser(new string[] { "foo", "bar" }, _logger, _fileSystem);
+            var parser = new ArgumentParser(_validArgs, _logger, _fileSystem);
 
             Assert.That(parser.Parse(), Is.EqualTo(expectedResult));
         }
@@ -101,7 +103,7 @@ namespace MazeSolver.Tests
             var files = SetupHappyPathFileData();
             files.Item2.Extension.ReturnsForAnyArgs(extension);
 
-            var parser = new ArgumentParser(new string[] { "foo", "bar" }, _logger, _fileSystem);
+            var parser = new ArgumentParser(_validArgs, _logger, _fileSystem);
 
             Assert.That(parser.Parse(), Is.EqualTo(true));
         }
@@ -111,7 +113,7 @@ namespace MazeSolver.Tests
         {
             _fileSystem.GetFileData("").ReturnsForAnyArgs(x => { throw new Exception("Something bad happened"); });
 
-            var parser = new ArgumentParser(new string[] { "foo", "bar" }, _logger, _fileSystem);
+            var parser = new ArgumentParser(_validArgs, _logger, _fileSystem);
 
             Assert.That(parser.Parse(), Is.EqualTo(false));
         }

@@ -29,17 +29,26 @@ namespace MazeSolver
                 Environment.Exit(1);
             }
 
-            var sourceImage = PrepareBitmap(parser.InputFilePath);
-            var graph = Graph.Build(sourceImage);
-            var success = PathFinder.Find(graph);
-
-            if(!success)
+            try
             {
-                logger.LogError("A connecting path could not be found!");
+                var sourceImage = PrepareBitmap(parser.InputFilePath);
+                var graph = Graph.Build(sourceImage);
+                var success = PathFinder.Find(graph);
+            
+
+                if(!success)
+                {
+                    logger.LogError("A connecting path could not be found!");
+                    Environment.Exit(1);
+                }
+
+                graph.DrawToBitmap(sourceImage).Save(parser.OutputFilePath);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "An unhandled exception was thrown.");
                 Environment.Exit(1);
             }
-
-            graph.DrawToBitmap(sourceImage).Save(parser.OutputFilePath);
         }
 
         /// <summary>

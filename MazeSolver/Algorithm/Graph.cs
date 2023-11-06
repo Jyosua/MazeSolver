@@ -22,30 +22,24 @@ namespace MazeSolver.Algorithm
             EndPoint = endingArea.GetCorrectedAveragePoint();
         }
 
-        public Node GetNode(Point point) => GetNode(point.X, point.Y);
-        public Node GetNode(int x, int y) => _graph[x, y];
-        public Node GetParent(Node node) => GetNode(node.ParentX, node.ParentY);
-
         public readonly Point StartPoint;
         public readonly Point EndPoint;
 
         public int Width => _graph.GetLength(0);
         public int Height => _graph.GetLength(1);
 
-        public IEnumerable<Node> GetNeighbors(Node node)
-        {
-            var neighbors = new List<Node>();
-            return Enum.GetValues(typeof(Direction)).Cast<Direction>()
-                .Where(direction =>
-                {
-                    var x = direction.GetOffset().X + node.X;
-                    var y = direction.GetOffset().Y + node.Y;
-                    return x >= 0 && x < Width && y >= 0 && y < Height;
-                }
-                ).Select(direction => GetNeighbor(node, direction));
-        }
-
+        public Node GetNode(Point point) => GetNode(point.X, point.Y);
+        public Node GetNode(int x, int y) => _graph[x, y];
+        public Node GetParent(Node node) => GetNode(node.ParentX, node.ParentY);
         public Node GetNeighbor(Node node, Direction direction) => _graph[direction.GetOffset().X + node.X, direction.GetOffset().Y + node.Y];
+        public bool HasNeighbor(Node node, Direction direction)
+        {
+            var offset = direction.GetOffset();
+            var x = offset.X + node.X;
+            var y = offset.Y + node.Y;
+
+            return x >= 0 && x < Width && y >= 0 && y < Height;
+        }
 
         public static Graph Build(Bitmap sourceImage)
         {
